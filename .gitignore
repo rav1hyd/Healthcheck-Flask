@@ -1,0 +1,82 @@
+# ========================================
+# Python / Flask Project Git Ignore
+# ========================================
+
+# --- Python cache and build files ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+*.egg-info/
+*.log
+
+# --- Virtual environments ---
+venv/
+.env/
+.env.bak/
+env/
+ENV/
+.venv/
+venv.bak/
+
+# --- OS specific files ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- IDE / Editor files ---
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# --- Flask / Server specific ---
+instance/
+*.pid
+*.sock
+
+# --- SQLite database ---
+app.db
+*.sqlite3
+*.sqlite
+*.db-shm
+*.db-wal
+
+# --- Uploaded / temporary files ---
+uploads/
+temp/
+tmp/
+*.tmp
+*.bak
+
+# --- Byte-compiled / cache files ---
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.pycache/
+
+# --- Logs / Reports ---
+*.log
+*.out
+*.err
+
+# --- Jupyter / Notebook (if any) ---
+.ipynb_checkpoints/
+*.ipynb
+
+# --- Node / Frontend (if any JS build) ---
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+package-lock.json
+
+# --- Config backups ---
+config.yaml.bak
+config.json.bak
+
+# --- System files ---
+ehthumbs.db
+Icon?

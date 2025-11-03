@@ -1,0 +1,10 @@
+# config.yaml - static credentials and app config
+auth:
+  username: admin
+  password: admin123
+
+flask:
+  secret_key: "change_this_to_a_random_secret_in_prod"
+upload:
+  folder: uploads
+  allowed_extensions: ["xls", "xlsx"]
