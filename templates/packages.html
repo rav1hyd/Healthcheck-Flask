@@ -2,35 +2,33 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Log History | SDS - Autopatching Solution</title>
+  <title>OS Patches | SDS - Autopatching Solution</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
   <style>
     body { background-color: #f8f9fa; }
     .table-wrap { background: #fff; border-radius: 8px; padding: 16px; margin-top: 20px; }
-    .status-success { color: green; font-weight: 600; }
-    .status-failed { color: #d63333; font-weight: 600; }
   </style>
 </head>
 <body>
+
   <!-- Navbar -->
   <nav class="navbar navbar-dark bg-dark">
     <div class="container-fluid">
       <button class="btn btn-dark me-2" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarMenu" aria-controls="sidebarMenu">
         <span class="navbar-toggler-icon"></span>
       </button>
-      <span class="navbar-brand">SDS - Autopatching Solution<br><span class="navbar-text">Log History</span></span>
+      <<span class="navbar-brand">SDS - Autopatching Solution<br><span class="navbar-text">Packages</span></span>
       <div class="ms-auto d-flex align-items-center">
         {% if username %}
           <span class="navbar-text text-light me-3">Signed in as {{ username }}</span>
         {% endif %}
-        <!-- <a class="btn btn-outline-light btn-sm" href="{{ url_for('logout') }}">Logout</a> -->
       </div>
     </div>
   </nav>
 
-  <!-- Sidebar Menu -->
+  <!-- Sidebar -->
   <div class="offcanvas offcanvas-start bg-dark text-white" tabindex="-1" id="sidebarMenu">
     <div class="offcanvas-header border-bottom">
       <h5 class="offcanvas-title">Menu</h5>
@@ -48,10 +46,10 @@
           <a class="nav-link text-white" href="{{ url_for('patch_management') }}"><i class="bi bi-wrench-adjustable-circle me-2"></i>Patch Management</a>
         </li>
         <li class="nav-item mb-2">
-        <a class="nav-link text-white" href="{{ url_for('packages') }}"><i class="bi bi-hdd-network me-2"></i>Packages</a>
+          <a class="nav-link active text-info" href="#"><i class="bi bi-collection me-2"></i>Packages</a>
         </li>
         <li class="nav-item mb-2">
-          <a class="nav-link active text-info" href="#"><i class="bi bi-clock-history me-2"></i>Log History</a>
+          <a class="nav-link text-white" href="{{ url_for('log_history') }}"><i class="bi bi-clock-history me-2"></i>Log History</a>
         </li>
         <li><hr class="text-secondary"></li>
         <li class="nav-item">
@@ -62,66 +60,39 @@
   </div>
 
   <div class="container my-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h4>Patch Logs</h4>
-      <button class="btn btn-secondary btn-sm" onclick="loadLogs()">Refresh</button>
-    </div>
+    <h4>OS Patches</h4>
 
     <div class="card table-wrap">
       <div class="table-responsive">
-        <table class="table table-striped table-sm" id="logsTable">
+        <table class="table table-striped table-sm">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Host</th>
-              <th>Action</th>
-              <th>Status</th>
-              <th>Message</th>
-              <th>Timestamp</th>
-          
+              <th>Patch</th>
+              <th>Patch ID</th>
+              <th>Category</th>
+              <th>Downloaded time</th>
             </tr>
           </thead>
-          <tbody>
-            <tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>
-          </tbody>
+            <tbody>
+                {% if packages|length == 0 %}
+                    <tr><td colspan="3" class="text-center text-muted">No packages found</td></tr>
+                {% else %}
+                    {% for p in packages %}
+                    <tr>
+                        <td>{{ p.patch }}</td>
+                        <td>{{ p.patch_id }}</td>
+                        <td>{{ p.category }}</td>
+                        <td>{{ p.downloaded_at}}</td>
+                    </tr>
+                    {% endfor %}
+                {% endif %}
+                </tbody>
+
         </table>
       </div>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
-    async function loadLogs() {
-      const tbody = document.querySelector('#logsTable tbody');
-      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Loading...</td></tr>';
-      try {
-        const resp = await fetch("{{ url_for('api_logs') }}");
-        const data = await resp.json();
-        tbody.innerHTML = '';
-        if (data.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No logs yet</td></tr>';
-          return;
-        }
-        for (const log of data) {
-          const statusClass = log.status === 'success' ? 'status-success' : 'status-failed';
-          const row = `
-            <tr>
-              <td>${log.id}</td>
-              <td>${log.host}</td>
-              <td>${log.action}</td>
-              <td><span class="${statusClass}">${log.status}</span></td>
-              <td>${log.message || ''}</td>
-              <td>${new Date(log.created_at).toLocaleString()}</td>
-              
-            </tr>`;
-          tbody.insertAdjacentHTML('beforeend', row);
-        }
-      } catch (err) {
-        console.error('Error loading logs:', err);
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Error loading logs</td></tr>';
-      }
-    }
-    document.addEventListener('DOMContentLoaded', loadLogs);
-  </script>
 </body>
 </html>

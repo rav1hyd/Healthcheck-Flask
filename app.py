@@ -25,6 +25,14 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(basedir, "ap
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
 
+
+@app.route("/packages")
+def packages():
+    all_packages = Packages.query.all()
+    return render_template("packages.html", packages=all_packages, username=session.get("username"))
+
+
+
 # =======================
 # Models
 # =======================
@@ -49,6 +57,15 @@ class HostEntry(db.Model):
     message = db.Column(db.String(1024), nullable=True)
     last_checked = db.Column(db.DateTime, nullable=True)
     upload = db.relationship("Upload", back_populates="hosts")
+
+class Packages(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    patch = db.Column(db.String(200))
+    patch_id = db.Column(db.String(50))
+    category = db.Column(db.String(100))
+    downloaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 
 class PatchLog(db.Model):
     __tablename__ = "patch_logs"
@@ -85,10 +102,10 @@ def find_column(columns, possible_names):
     return None
 
 def check_ssh_connectivity(host, username, pem_path, timeout=5):
-    """Try SSH connection using paramiko (returns dict)."""
+    """Try SSH connection using paramiko and return standardized status text."""
     try:
         if not pem_path or not os.path.exists(pem_path):
-            return {"host": host, "ok": False, "msg": f"PEM not found or not provided: {pem_path}"}
+            return {"host": host, "ok": False, "msg": "PEM file missing / not found"}
 
         key = None
         try:
@@ -101,6 +118,7 @@ def check_ssh_connectivity(host, username, pem_path, timeout=5):
 
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
         connect_kwargs = dict(hostname=str(host).strip(), username=username, timeout=timeout)
         if key:
             connect_kwargs["pkey"] = key
@@ -108,20 +126,32 @@ def check_ssh_connectivity(host, username, pem_path, timeout=5):
             connect_kwargs["key_filename"] = pem_path
 
         client.connect(**connect_kwargs)
-        # light check: run echo
+
+        # light verification command
         stdin, stdout, stderr = client.exec_command("echo ok", timeout=timeout)
         out = stdout.read().decode().strip()
         client.close()
+
         if out == "ok":
-            return {"host": host, "ok": True, "msg": "Connected"}
+            return {"host": host, "ok": True, "msg": "Connection Successful"}
         else:
-            return {"host": host, "ok": True, "msg": f"Connected (echo returned: {out})"}
+            return {"host": host, "ok": True, "msg": f"Connected (unexpected response)"}
+
+    except socket.timeout:
+        return {"host": host, "ok": False, "msg": "Connection Timeout (host unavailable)"}
+
     except paramiko.AuthenticationException:
-        return {"host": host, "ok": False, "msg": "Authentication failed"}
-    except (paramiko.SSHException, socket.error, socket.timeout) as e:
-        return {"host": host, "ok": False, "msg": f"SSH error: {str(e)}"}
+        return {"host": host, "ok": False, "msg": "SSH Authentication Failed"}
+
+    except paramiko.ssh_exception.NoValidConnectionsError:
+        return {"host": host, "ok": False, "msg": "Port 22 Not Reachable (Firewall/Closed)"}
+
+    except (paramiko.SSHException, socket.error) as e:
+        return {"host": host, "ok": False, "msg": f"SSH Error: {str(e)}"}
+
     except Exception as e:
-        return {"host": host, "ok": False, "msg": f"Error: {str(e)}"}
+        return {"host": host, "ok": False, "msg": f"Unknown Error: {str(e)}"}
+
 
 def run_patch_on_host(host, username, pem_path, command="echo patched", timeout=30):
     """Run a simple patch command on host via SSH and return status/msg. Keep command minimal here."""
@@ -239,8 +269,8 @@ def dashboard():
 
         # ✅ store session id and redirect to patch management directly
         session["current_upload_id"] = upload.id
-        flash(f"File '{filename}' uploaded successfully. Set as current upload (ID={upload.id})", "success")
-        return redirect(url_for("patch_management"))
+        flash(f"Servers are successfully Onboarded. Navigate to Patch management for further Actions", "success")
+        return redirect(url_for("dashboard"))
 
     # GET = show preview of current upload if exists
     if current_upload_id:
@@ -371,27 +401,111 @@ def trigger_patch():
         return jsonify({"error": "No current upload selected"}), 400
 
     results = []
+
+    # check statuses first (must be connected)
     for hid in host_ids:
         he = HostEntry.query.get(int(hid))
         if not he or he.upload_id != current_upload_id:
-            continue
+            return jsonify({"error": f"Host id {hid} not part of current upload"}), 400
         if he.status != "connected":
-            results.append({"id": he.id, "host": he.host, "ok": False, "msg": "Host not connected. Run check first."})
-            continue
+            return jsonify({"error": f"Host {he.host} not connected. Run connectivity check first."}), 400
 
+    # run patch
+    for hid in host_ids:
+        he = HostEntry.query.get(int(hid))
         res = run_patch_on_host(he.host, he.ssh_user, he.pem_path, command=command)
+
         he.status = "patched" if res["ok"] else "failed"
         he.message = res["msg"]
         he.last_checked = datetime.utcnow()
         db.session.add(he)
 
-        log = PatchLog(upload_id=current_upload_id, host_id=he.id, host=he.host,
-                       action=command, status="success" if res["ok"] else "failed", message=res["msg"])
+        log = PatchLog(
+            upload_id=current_upload_id,
+            host_id=he.id,
+            host=he.host,
+            action="Patch",                # <<<<< FIXED here
+            status="success" if res["ok"] else "failed",
+            message=res["msg"]
+        )
         db.session.add(log)
 
         results.append({"id": he.id, "host": he.host, "ok": res["ok"], "msg": res["msg"]})
+
     db.session.commit()
     return jsonify({"results": results})
+
+
+@app.route("/trigger_rollback", methods=["POST"])
+@login_required
+def trigger_rollback():
+    host_ids = request.form.getlist("host_ids[]")
+    if not host_ids:
+        return jsonify({"error": "host_ids[] required"}), 400
+
+    current_upload_id = session.get("current_upload_id")
+    if not current_upload_id:
+        return jsonify({"error": "No current upload selected"}), 400
+
+    results = []
+
+    # only allow rollback for patched
+    for hid in host_ids:
+        he = HostEntry.query.get(int(hid))
+        if not he or he.upload_id != current_upload_id:
+            return jsonify({"error": f"Host id {hid} not part of current upload"}), 400
+        if he.status != "patched":
+            return jsonify({"error": f"Host {he.host} not patched. Cannot rollback."}), 400
+
+    # ubuntu rollback logic
+    for hid in host_ids:
+        he = HostEntry.query.get(int(hid))
+
+        cmd = "sudo apt-get install --reinstall $(apt-cache policy | grep Installed | awk '{print $2}' | sed 's/)//')"
+        res = run_patch_on_host(he.host, he.ssh_user, he.pem_path, command=cmd)
+
+        he.status = "connected" if res["ok"] else "failed"
+        he.message = f"Rollback: {res['msg']}"
+        he.last_checked = datetime.utcnow()
+        db.session.add(he)
+
+        log = PatchLog(
+            upload_id=current_upload_id,
+            host_id=he.id,
+            host=he.host,
+            action="Rollback",            # <<<<< FIXED here
+            status="success" if res["ok"] else "failed",
+            message=res["msg"]
+        )
+        db.session.add(log)
+
+        results.append({"id": he.id, "host": he.host, "ok": res["ok"], "msg": he.message})
+
+    db.session.commit()
+    return jsonify({"results": results})
+
+
+
+
+@app.route("/inventory_check", methods=["POST"])
+@login_required
+def inventory_check():
+    current_upload_id = session.get("current_upload_id")
+    if not current_upload_id:
+        return jsonify({"error": "No active upload"}), 400
+
+    hosts = HostEntry.query.filter_by(upload_id=current_upload_id).all()
+    results = []
+    for he in hosts:
+        res = check_ssh_connectivity(he.host, he.ssh_user, he.pem_path)
+        he.status = "connected" if res["ok"] else "failed"
+        he.message = res["msg"]
+        he.last_checked = datetime.utcnow()
+        db.session.add(he)
+        results.append({"id": he.id, "status": he.status, "msg": he.message})
+    db.session.commit()
+    return jsonify({"results": results})
+
 
 
 # -----------------------
