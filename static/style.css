@@ -5,3 +5,4 @@ input[type=text], input[type=file] { padding:8px; width: 60%; }
 button { padding:8px 14px; background:#1e90ff; color:white; border:none; border-radius:6px; }
 .table-container table { width:100%; border-collapse: collapse; }
 .table-container th, .table-container td { padding:8px; border:1px solid #333; color:#ddd; }
+
